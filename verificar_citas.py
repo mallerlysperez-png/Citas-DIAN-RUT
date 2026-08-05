@@ -181,16 +181,23 @@ def revisar_portal():
             hacer_clic_en_texto(pagina, "Agendar cita")
             pagina.wait_for_timeout(2000)
 
-            print("Paso 2: clic en 'Persona Natural'")
-            hacer_clic_en_texto(pagina, "Persona Natural")
+            # Usamos fragmentos cortos y unicos en lugar de la frase
+            # completa: el portal dibuja "Persona" y "Natural" (o "RUT" y
+            # "orientacion TAC") en lineas separadas dentro de la misma
+            # tarjeta, asi que buscar la frase completa con espacio nunca
+            # encuentra nada. Elegimos una palabra que no se repita en
+            # ninguna otra parte de la pagina (por ejemplo, el pie de
+            # pagina) para no hacer clic en el lugar equivocado.
+            print("Paso 2: clic en 'Natural' (tarjeta Persona Natural)")
+            hacer_clic_en_texto(pagina, "Natural")
             pagina.wait_for_timeout(1500)
 
             print("Paso 3: clic en 'Videoatención'")
             hacer_clic_en_texto(pagina, "Videoatención")
             pagina.wait_for_timeout(1500)
 
-            print("Paso 4: clic en 'RUT y orientación TAC'")
-            hacer_clic_en_texto(pagina, "RUT y orientación TAC")
+            print("Paso 4: clic en 'RUT' (tarjeta RUT y orientación TAC)")
+            hacer_clic_en_texto(pagina, "RUT")
             pagina.wait_for_timeout(3000)
 
             # Guardamos siempre una captura del resultado final, sin
