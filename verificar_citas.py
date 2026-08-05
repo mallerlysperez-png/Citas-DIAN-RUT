@@ -237,7 +237,7 @@ def main():
 
     if resultado == "hay_disponibilidad":
         enviar_mensaje_slack(
-            "🚨 Hay citas virtuales disponibles en la DIAN para RUT de Persona Natural.\n"
+            "<!channel> 🚨 Hay citas virtuales disponibles en la DIAN para RUT de Persona Natural.\n"
             "Se recomienda ingresar inmediatamente al portal para agendar la cita:\n"
             "https://agendamiento.dian.gov.co/"
         )
