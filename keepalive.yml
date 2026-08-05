@@ -1,0 +1,35 @@
+name: Mantener activo el repositorio
+
+# Este workflow NO verifica citas. Su unico proposito es hacer un cambio
+# pequeno y automatico en el repositorio una vez al mes, para que GitHub
+# no desactive por inactividad la tarea programada real
+# ("Verificar citas DIAN"). GitHub desactiva automaticamente los
+# workflows programados si el repositorio pasa 60 dias sin ningun
+# cambio (commit) — con esto nunca llegamos a esos 60 dias.
+on:
+  schedule:
+    - cron: "0 12 1 * *"  # el dia 1 de cada mes, a las 12:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  mantener_vivo:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar el codigo del repositorio
+        uses: actions/checkout@v4
+
+      - name: Actualizar la marca de fecha
+        run: |
+          mkdir -p .github
+          echo "Ultima senal de actividad automatica: $(date -u '+%Y-%m-%d %H:%M UTC')" > .github/ultimo_keepalive.txt
+
+      - name: Guardar el cambio en el repositorio
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .github/ultimo_keepalive.txt
+          git commit -m "Mantener activo el repositorio (automatico)" || echo "No habia cambios que confirmar"
+          git push
