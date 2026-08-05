@@ -1,0 +1,33 @@
+name: Explorar portal DIAN (solo diagnostico)
+
+# Este workflow NO se ejecuta solo ni por horario.
+# Se dispara unicamente cuando tu lo activas manualmente desde la pestana
+# "Actions" del repositorio, haciendo clic en "Run workflow".
+on:
+  workflow_dispatch:
+
+jobs:
+  explorar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar el codigo del repositorio
+        uses: actions/checkout@v4
+
+      - name: Preparar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar las herramientas necesarias
+        run: |
+          pip install -r requirements.txt
+          playwright install --with-deps chromium
+
+      - name: Ejecutar la exploracion del portal
+        run: python explorar_portal.py
+
+      - name: Guardar los resultados para poder descargarlos
+        uses: actions/upload-artifact@v4
+        with:
+          name: reporte-exploracion
+          path: reporte_exploracion/
