@@ -89,16 +89,46 @@ def guardar_captura(pagina, nombre_archivo):
         print(f"No se pudo guardar la captura de pantalla: {error}")
 
 
+def _buscar_coincidencia_visible(pagina, texto, tiempo_espera_ms):
+    """
+    El portal de la DIAN dibuja varias copias del mismo texto en la
+    pagina (por ejemplo, una version para celular y otra para
+    computador), pero solo una esta realmente visible a la vez. Esta
+    funcion revisa TODAS las coincidencias de un texto, una y otra vez
+    durante el tiempo de espera indicado, hasta encontrar la primera que
+    de verdad se pueda ver en pantalla. Devuelve ese elemento, o None si
+    se agoto el tiempo sin encontrar ninguna copia visible.
+    """
+    limite = time.time() + (tiempo_espera_ms / 1000)
+    while time.time() < limite:
+        candidatos = pagina.get_by_text(texto, exact=False).all()
+        for candidato in candidatos:
+            try:
+                if candidato.is_visible():
+                    return candidato
+            except Exception:
+                # Un candidato puede "desaparecer" justo cuando lo
+                # revisamos (la pagina sigue cambiando); lo ignoramos y
+                # seguimos con el siguiente.
+                continue
+        pagina.wait_for_timeout(300)
+    return None
+
+
 def hacer_clic_en_texto(pagina, texto_visible, tiempo_espera_ms=15000):
     """
-    Busca un elemento en la pagina por su texto visible (tal como lo veria
-    una persona) y hace clic en el. Usamos texto en lugar de codigos
-    tecnicos internos porque es mucho mas resistente a cambios pequenos
-    de diseno en el portal.
+    Busca, entre todas las copias de un texto en la pagina, la primera
+    que sea realmente visible, y hace clic en ella. Usamos texto en
+    lugar de codigos tecnicos internos porque es mucho mas resistente a
+    cambios pequenos de diseno en el portal.
     """
-    localizador = pagina.get_by_text(texto_visible, exact=False).first
-    localizador.wait_for(state="visible", timeout=tiempo_espera_ms)
-    localizador.click()
+    elemento = _buscar_coincidencia_visible(pagina, texto_visible, tiempo_espera_ms)
+    if elemento is None:
+        raise TimeoutError(
+            f"No se encontro ninguna copia VISIBLE del texto '{texto_visible}' "
+            f"despues de esperar {tiempo_espera_ms / 1000:.0f} segundos."
+        )
+    elemento.click()
 
 
 def aparece_texto(pagina, texto_a_buscar, tiempo_espera_ms=10000):
@@ -107,13 +137,7 @@ def aparece_texto(pagina, texto_a_buscar, tiempo_espera_ms=10000):
     hasta 'tiempo_espera_ms' milisegundos. Devuelve True/False en lugar de
     lanzar un error si no aparece (a diferencia de hacer_clic_en_texto).
     """
-    try:
-        pagina.get_by_text(texto_a_buscar, exact=False).first.wait_for(
-            state="visible", timeout=tiempo_espera_ms
-        )
-        return True
-    except Exception:
-        return False
+    return _buscar_coincidencia_visible(pagina, texto_a_buscar, tiempo_espera_ms) is not None
 
 
 # -----------------------------------------------------------------------
