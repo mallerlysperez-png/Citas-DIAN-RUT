@@ -1,0 +1,213 @@
+"""
+verificar_citas.py
+
+Este es el programa principal de la automatizacion. Cada vez que se
+ejecuta (GitHub Actions lo hara cada 10-15 minutos), hace lo siguiente:
+
+1. Abre un navegador invisible con Playwright.
+2. Entra al portal de agendamiento de citas de la DIAN.
+3. Repite la misma secuencia de clics que haria una persona:
+   Agendar cita -> Persona Natural -> Videoatencion -> RUT y orientacion TAC
+4. Revisa el resultado:
+   - Si aparece el mensaje de "no se encontraron especialidades", NO hay
+     disponibilidad. No se envia ningun mensaje a Slack.
+   - Si el sistema permite avanzar (no aparece ese mensaje), SI hay
+     disponibilidad. Se envia un mensaje a Slack de inmediato.
+   - Si algo sale mal tecnicamente (la pagina no carga, un boton no
+     aparece, etc), se guarda una captura de pantalla como evidencia y
+     se envia un mensaje de alerta distinto, avisando que la
+     automatizacion necesita revision.
+
+Nada de esto intenta resolver ni evadir controles de seguridad (como un
+reCAPTCHA). Si alguno aparece, simplemente se trata como un error tecnico
+mas, se registra, y el programa termina esa ejecucion sin insistir.
+"""
+
+from playwright.sync_api import sync_playwright
+import os
+import sys
+import time
+import random
+import requests
+
+# -----------------------------------------------------------------------
+# Configuracion general
+# -----------------------------------------------------------------------
+
+URL_PORTAL = "https://agendamiento.dian.gov.co/"
+
+# La direccion secreta de Slack se lee de una variable de entorno, nunca
+# se escribe directamente en el codigo. GitHub Actions se encarga de
+# poner este valor a partir de un "Secret" que configuraremos mas
+# adelante.
+SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "").strip()
+
+CARPETA_EVIDENCIA = "evidencia"
+os.makedirs(CARPETA_EVIDENCIA, exist_ok=True)
+
+# Este es el texto exacto que vimos aparecer cuando NO hay citas
+# disponibles. Si el portal cambia este mensaje en el futuro, este es el
+# lugar donde habria que actualizarlo.
+TEXTO_SIN_DISPONIBILIDAD = "No se encontraron especialidades"
+
+
+# -----------------------------------------------------------------------
+# Funciones de apoyo
+# -----------------------------------------------------------------------
+
+def enviar_mensaje_slack(mensaje):
+    """
+    Envia un mensaje de texto simple al canal de Slack configurado,
+    usando el Incoming Webhook. Si por alguna razon no hay una direccion
+    configurada, solo lo avisa en los logs y sigue (no rompe el programa).
+    """
+    if not SLACK_WEBHOOK_URL:
+        print("AVISO: no hay SLACK_WEBHOOK_URL configurado. No se envio nada a Slack.")
+        print(f"(El mensaje que se hubiera enviado era: {mensaje})")
+        return
+
+    try:
+        respuesta = requests.post(
+            SLACK_WEBHOOK_URL,
+            json={"text": mensaje},
+            timeout=15,
+        )
+        if respuesta.status_code != 200:
+            print(f"Slack respondio con un codigo inesperado: {respuesta.status_code} - {respuesta.text}")
+    except Exception as error:
+        print(f"No se pudo enviar el mensaje a Slack: {error}")
+
+
+def guardar_captura(pagina, nombre_archivo):
+    """Guarda una captura de pantalla de la pagina actual, sin interrumpir
+    el programa si algo falla al guardarla."""
+    try:
+        ruta = os.path.join(CARPETA_EVIDENCIA, nombre_archivo)
+        pagina.screenshot(path=ruta, full_page=True)
+        print(f"Captura de evidencia guardada en: {ruta}")
+    except Exception as error:
+        print(f"No se pudo guardar la captura de pantalla: {error}")
+
+
+def hacer_clic_en_texto(pagina, texto_visible, tiempo_espera_ms=15000):
+    """
+    Busca un elemento en la pagina por su texto visible (tal como lo veria
+    una persona) y hace clic en el. Usamos texto en lugar de codigos
+    tecnicos internos porque es mucho mas resistente a cambios pequenos
+    de diseno en el portal.
+    """
+    localizador = pagina.get_by_text(texto_visible, exact=False).first
+    localizador.wait_for(state="visible", timeout=tiempo_espera_ms)
+    localizador.click()
+
+
+def aparece_texto(pagina, texto_a_buscar, tiempo_espera_ms=10000):
+    """
+    Revisa si un texto especifico aparece visible en la pagina, esperando
+    hasta 'tiempo_espera_ms' milisegundos. Devuelve True/False en lugar de
+    lanzar un error si no aparece (a diferencia de hacer_clic_en_texto).
+    """
+    try:
+        pagina.get_by_text(texto_a_buscar, exact=False).first.wait_for(
+            state="visible", timeout=tiempo_espera_ms
+        )
+        return True
+    except Exception:
+        return False
+
+
+# -----------------------------------------------------------------------
+# Logica principal: revisar el portal una vez
+# -----------------------------------------------------------------------
+
+def revisar_portal():
+    """
+    Ejecuta una revision completa del portal y devuelve un texto con el
+    resultado: "sin_disponibilidad", "hay_disponibilidad" o "error".
+    """
+    with sync_playwright() as playwright:
+        navegador = playwright.chromium.launch(headless=True)
+        pagina = navegador.new_page()
+
+        try:
+            print(f"Abriendo el portal: {URL_PORTAL}")
+            pagina.goto(URL_PORTAL, wait_until="domcontentloaded", timeout=60000)
+            pagina.wait_for_timeout(3000)
+
+            print("Paso 1: clic en 'Agendar cita'")
+            hacer_clic_en_texto(pagina, "Agendar cita")
+            pagina.wait_for_timeout(2000)
+
+            print("Paso 2: clic en 'Persona Natural'")
+            hacer_clic_en_texto(pagina, "Persona Natural")
+            pagina.wait_for_timeout(1500)
+
+            print("Paso 3: clic en 'Videoatención'")
+            hacer_clic_en_texto(pagina, "Videoatención")
+            pagina.wait_for_timeout(1500)
+
+            print("Paso 4: clic en 'RUT y orientación TAC'")
+            hacer_clic_en_texto(pagina, "RUT y orientación TAC")
+            pagina.wait_for_timeout(3000)
+
+            # Guardamos siempre una captura del resultado final, sin
+            # importar cual haya sido, para poder revisarla despues si
+            # algo se ve raro.
+            guardar_captura(pagina, "resultado_ultima_revision.png")
+
+            if aparece_texto(pagina, TEXTO_SIN_DISPONIBILIDAD, tiempo_espera_ms=8000):
+                print("Resultado: SIN disponibilidad (mensaje de 'no encontrado' presente).")
+                return "sin_disponibilidad"
+
+            print("Resultado: el mensaje de 'sin disponibilidad' NO aparecio -> posible disponibilidad.")
+            return "hay_disponibilidad"
+
+        except Exception as error:
+            print(f"ERROR TECNICO durante la revision: {error}")
+            guardar_captura(pagina, "error_ultima_revision.png")
+            return "error"
+
+        finally:
+            navegador.close()
+
+
+# -----------------------------------------------------------------------
+# Punto de entrada del programa
+# -----------------------------------------------------------------------
+
+def main():
+    # Pequena espera aleatoria (entre 0 y 45 segundos) para que la
+    # ejecucion no ocurra siempre en el segundo exacto programado, y el
+    # patron de trafico se parezca un poco mas al de una persona.
+    espera_inicial = random.randint(0, 45)
+    print(f"Esperando {espera_inicial} segundos antes de empezar (variacion normal)...")
+    time.sleep(espera_inicial)
+
+    resultado = revisar_portal()
+
+    if resultado == "hay_disponibilidad":
+        enviar_mensaje_slack(
+            "🚨 Hay citas virtuales disponibles en la DIAN para RUT de Persona Natural.\n"
+            "Se recomienda ingresar inmediatamente al portal para agendar la cita:\n"
+            "https://agendamiento.dian.gov.co/"
+        )
+        print("Aviso de disponibilidad enviado a Slack.")
+
+    elif resultado == "sin_disponibilidad":
+        print("Sin disponibilidad. No se envia ningun mensaje. Ejecucion normal.")
+
+    elif resultado == "error":
+        enviar_mensaje_slack(
+            "⚠️ La automatización de citas DIAN tuvo un error técnico en esta "
+            "revisión (por ejemplo, el portal no respondió como se esperaba, o "
+            "apareció un control de seguridad). Revisa los registros y la "
+            "captura de pantalla en la pestaña Actions de GitHub."
+        )
+        # Terminamos con un codigo de salida distinto de cero para que
+        # GitHub marque esta ejecucion como "fallida" en su historial,
+        # ademas del aviso que ya enviamos a Slack.
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
