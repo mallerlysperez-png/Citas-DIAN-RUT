@@ -89,28 +89,47 @@ def guardar_captura(pagina, nombre_archivo):
         print(f"No se pudo guardar la captura de pantalla: {error}")
 
 
+TAMANO_MINIMO_PIXELES = 10  # ancho y alto minimos para considerar un elemento "real"
+
+
 def _buscar_coincidencia_visible(pagina, texto, tiempo_espera_ms):
     """
     El portal de la DIAN dibuja varias copias del mismo texto en la
-    pagina (por ejemplo, una version para celular y otra para
-    computador), pero solo una esta realmente visible a la vez. Esta
-    funcion revisa TODAS las coincidencias de un texto, una y otra vez
-    durante el tiempo de espera indicado, hasta encontrar la primera que
-    de verdad se pueda ver en pantalla. Devuelve ese elemento, o None si
-    se agoto el tiempo sin encontrar ninguna copia visible.
+    pagina (por ejemplo, copias pensadas para lectores de pantalla, que
+    tecnicamente son "visibles" pero miden 1 pixel o estan fuera de la
+    pantalla). Esta funcion revisa TODAS las coincidencias de un texto,
+    una y otra vez durante el tiempo de espera indicado, y descarta las
+    que sean visibles pero demasiado pequenas para ser el boton real que
+    una persona veria y presionaria. Devuelve la primera coincidencia que
+    de verdad parezca un elemento usable, o None si se agoto el tiempo.
     """
     limite = time.time() + (tiempo_espera_ms / 1000)
+    intento = 0
     while time.time() < limite:
+        intento += 1
         candidatos = pagina.get_by_text(texto, exact=False).all()
+        total = len(candidatos)
+        visibles_pequenos = 0
+
         for candidato in candidatos:
             try:
-                if candidato.is_visible():
-                    return candidato
+                if not candidato.is_visible():
+                    continue
+                caja = candidato.bounding_box()
+                if caja is None:
+                    continue
+                if caja["width"] < TAMANO_MINIMO_PIXELES or caja["height"] < TAMANO_MINIMO_PIXELES:
+                    visibles_pequenos += 1
+                    continue
+                return candidato
             except Exception:
-                # Un candidato puede "desaparecer" justo cuando lo
-                # revisamos (la pagina sigue cambiando); lo ignoramos y
-                # seguimos con el siguiente.
                 continue
+
+        if intento == 1:
+            print(
+                f"  (buscando '{texto}': {total} coincidencias totales en el DOM, "
+                f"{visibles_pequenos} visibles pero demasiado pequenas para ser el boton real)"
+            )
         pagina.wait_for_timeout(300)
     return None
 
