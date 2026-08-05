@@ -1,0 +1,44 @@
+name: Verificar citas DIAN
+
+# "schedule" hace que esto se ejecute solo, automaticamente, cada 10
+# minutos, todo el dia, todos los dias. La sintaxis "*/10 * * * *"
+# significa "cada 10 minutos".
+#
+# "workflow_dispatch" ademas nos permite ejecutar esto manualmente
+# cuando querramos, por ejemplo para probar que todo funciona bien.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar el codigo del repositorio
+        uses: actions/checkout@v4
+
+      - name: Preparar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar las herramientas necesarias
+        run: |
+          pip install -r requirements.txt
+          playwright install --with-deps chromium
+
+      - name: Ejecutar la verificacion de citas
+        env:
+          # Este valor viene de un "Secret" configurado en GitHub, nunca
+          # queda escrito en el codigo ni visible en los logs.
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: python verificar_citas.py
+
+      - name: Guardar evidencia (capturas de pantalla) de esta ejecucion
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evidencia-verificacion
+          path: evidencia/
+          retention-days: 3
