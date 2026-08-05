@@ -48,7 +48,7 @@ os.makedirs(CARPETA_EVIDENCIA, exist_ok=True)
 # Este es el texto exacto que vimos aparecer cuando NO hay citas
 # disponibles. Si el portal cambia este mensaje en el futuro, este es el
 # lugar donde habria que actualizarlo.
-TEXTO_SIN_DISPONIBILIDAD = "No se encontraron especialidades"
+TEXTO_SIN_DISPONIBILIDAD = "ESTO_NUNCA_APARECE_PRUEBA_TEMPORAL"
 
 
 # -----------------------------------------------------------------------
